@@ -11,7 +11,7 @@ st.set_page_config(
     layout="centered"
 )
 
-# 메인 타이틀 (서브 슬로건 없이 깔끔한 EarFit 브랜드 적용)
+# 메인 타이틀 (깔끔한 EarFit 단독 적용)
 st.title("EarFit")
 st.write("---")
 
@@ -77,27 +77,36 @@ st.write("---")
 # ==========================================
 st.subheader("기본 정보 입력")
 
-# (1) 연령대 선택 (유세포 감수성 계산용)
+# (1) 연령대 선택 (추가 설명 제거)
 age_group = st.selectbox(
     "연령대를 선택하세요",
-    ["10대 이하 (청각 유세포 고감수성)", "20대 ~ 30대 (표준 감수성)", "40대 이상 (노화에 따른 유세포 감소 반영)"]
+    ["10대 이하", "20대 ~ 30대", "40대 이상"]
 )
 
-# (2) 스마트폰 종류 선택 (OS별 음량 커브 매핑)
+# (2) 스마트폰 종류 선택
 device_os = st.radio(
     "사용 중인 스마트폰 종류",
     ["아이폰 (iOS)", "삼성 갤럭시 (Android)"],
     horizontal=True
 )
 
-# (3) 청취 방식 선택 (외이도 음압 전달률 차이 반영)
+# (3) 청취 방식 선택 (추가 설명 제거)
 listening_method = st.radio(
     "청취 방식을 선택하세요",
-    ["이어폰 / 헤드폰 (귀 밀착 - 음압 증가)", "외부 스피커 (공간 확산)"],
+    ["이어폰 / 헤드폰", "외부 스피커"],
     horizontal=True
 )
 
-# (4) 기기별 독립 dB 음량 선택지 설정
+# (4) 이어폰/헤드폰 선택 시 추가 질문: 중간 공백(휴식) 여부
+is_continuous = "쉬지 않고 연속으로 청취"
+if listening_method == "이어폰 / 헤드폰":
+    is_continuous = st.radio(
+        "청취 형태를 선택하세요",
+        ["쉬지 않고 연속으로 청취", "중간에 쉬면서 청취 (간헐적 청취)"],
+        horizontal=True
+    )
+
+# (5) 기기별 독립 dB 음량 선택지 설정
 if device_os == "아이폰 (iOS)":
     volume_options = {
         "볼륨 25% 이하 (약 52 dB)": 52,
@@ -116,9 +125,9 @@ else:
 selected_vol_label = st.selectbox("평소 청취 음량을 선택하세요", list(volume_options.keys()))
 base_db = volume_options[selected_vol_label]
 
-# (5) 연속 청취 시간 입력
+# (6) 청취 시간 입력
 listen_duration = st.number_input(
-    "1회 연속 청취 시간 (분 단위)",
+    "총 청취 시간 (분 단위)",
     min_value=10,
     max_value=480,
     value=60,
@@ -133,28 +142,31 @@ st.write("---")
 
 # 연령대별 가중치 적용
 if "10대" in age_group:
-    age_factor = 1.15  # 청소년기 고주파 유세포 자극 민감도 반영
+    age_factor = 1.15
 elif "20대" in age_group:
     age_factor = 1.00
 else:
-    age_factor = 0.90  # 기저 청력 감퇴 감안 가중치
+    age_factor = 0.90
 
 # 청취 방식별 실질 음압(dB) 보정
 effective_db = base_db
-if "이어폰" in listening_method:
-    effective_db += 3  # 귀 밀착 시 외이도 밀폐 효과로 실질 음압 상승 반영
+if listening_method == "이어폰 / 헤드폰":
+    effective_db += 3  # 귀 밀착 시 외이도 음압 증가 반영
 
-# 일시적 청력 손실(TTS) 피로도 지수 계산 (NIOSH / WHO 음향 노출 공식 기반)
-# OSHA/NIOSH 기준 85dB 초과 시 피로도 급증
+# 중간 휴식 여부 가중치 (휴식이 있으면 피로도 회복 반영)
+rest_factor = 1.0
+if listening_method == "이어폰 / 헤드폰" and "중간에 쉬면서" in is_continuous:
+    rest_factor = 0.7  # 피로도 30% 감쇄 효과
+
+# 일시적 청력 손실(TTS) 피로도 지수 계산
 if effective_db < 70:
-    fatigue_index = (effective_db / 70) * (listen_duration / 120) * 20 * age_factor
+    fatigue_index = (effective_db / 70) * (listen_duration / 120) * 20 * age_factor * rest_factor
 elif effective_db < 85:
-    fatigue_index = (effective_db / 85) * (listen_duration / 90) * 50 * age_factor
+    fatigue_index = (effective_db / 85) * (listen_duration / 90) * 50 * age_factor * rest_factor
 else:
-    # 85dB 이상 구간: 3dB 상승할 때마다 허용 시간 절반으로 감소 (Equal Energy Rule)
     excess_db = effective_db - 85
-    time_limit = 480 / (2 ** (excess_db / 3))  # 85dB 8시간 기준
-    fatigue_index = (listen_duration / time_limit) * 100 * age_factor
+    time_limit = 480 / (2 ** (excess_db / 3))
+    fatigue_index = (listen_duration / time_limit) * 100 * age_factor * rest_factor
 
 fatigue_score = min(int(round(fatigue_index)), 100)
 
@@ -163,14 +175,13 @@ fatigue_score = min(int(round(fatigue_index)), 100)
 # ==========================================
 st.subheader("청각 피로도 진단 결과")
 
-# 게이지 표시용 프로그래스 바
 st.progress(fatigue_score / 100)
 
 if fatigue_score < 30:
     st.success(f"**안전 단계 (피로도 점수: {fatigue_score}/100)**\n\n귀의 유세포에 무리가 없는 안전한 청취 습관입니다.")
     st.info("💡 **권장 휴식:** 지금 상태를 유지하시고, 2시간 청취 후 5분 정도 가볍게 쉬어주세요.")
 elif fatigue_score < 70:
-    st.warning(f"**주의 단계 (피로도 점수: {fatigue_score}/100)**\n\n내이 유세포에 일시적인 자극이 누적되고 있습니다. 일시적 청력 Threshold Shift(TTS) 예방이 필요합니다.")
+    st.warning(f"**주의 단계 (피로도 점수: {fatigue_score}/100)**\n\n내이 유세포에 일시적인 자극이 누적되고 있습니다. 일시적 청력 손실(TTS) 예방이 필요합니다.")
     st.info("💡 **권장 휴식:** 음악 청취를 마치고 **최소 15분 이상** 소음이 없는 조용한 환경에서 휴식을 취하세요.")
 else:
     st.error(f"**위험 단계 (피로도 점수: {fatigue_score}/100)**\n\n청각 유세포 피로도가 매우 높습니다! 이 상태가 지속되면 영구적 청력 손실(PTS) 위험으로 이어질 수 있습니다.")
