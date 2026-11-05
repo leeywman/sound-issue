@@ -11,7 +11,7 @@ st.set_page_config(
     layout="centered"
 )
 
-# 메인 타이틀 (깔끔한 EarFit 단독 적용)
+# 메인 타이틀
 st.title("EarFit")
 st.write("---")
 
@@ -33,9 +33,8 @@ def play_1khz_tone_html():
         const gain = ctx.createGain();
 
         osc.type = 'sine';
-        osc.frequency.setValueAtTime(1000, ctx.currentTime); // 1000Hz (1kHz)
+        osc.frequency.setValueAtTime(1000, ctx.currentTime);
 
-        // 클릭음(팝 소리) 방지를 위한 앰플리튜드 엔벨롭 설정
         gain.gain.setValueAtTime(0.01, ctx.currentTime);
         gain.gain.exponentialRampToValueAtTime(0.3, ctx.currentTime + 0.1);
         gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 1.5);
@@ -77,7 +76,7 @@ st.write("---")
 # ==========================================
 st.subheader("기본 정보 입력")
 
-# (1) 연령대 선택 (추가 설명 제거)
+# (1) 연령대 선택
 age_group = st.selectbox(
     "연령대를 선택하세요",
     ["10대 이하", "20대 ~ 30대", "40대 이상"]
@@ -90,14 +89,14 @@ device_os = st.radio(
     horizontal=True
 )
 
-# (3) 청취 방식 선택 (추가 설명 제거)
+# (3) 청취 방식 선택
 listening_method = st.radio(
     "청취 방식을 선택하세요",
     ["이어폰 / 헤드폰", "외부 스피커"],
     horizontal=True
 )
 
-# (4) 이어폰/헤드폰 선택 시 추가 질문: 중간 공백(휴식) 여부
+# (4) 이어폰/헤드폰 선택 시 추가 질문
 is_continuous = "쉬지 않고 연속으로 청취"
 if listening_method == "이어폰 / 헤드폰":
     is_continuous = st.radio(
@@ -137,7 +136,7 @@ listen_duration = st.number_input(
 st.write("---")
 
 # ==========================================
-# 5. 이비인후과 알고리즘 및 피로도 계산 (수정본)
+# 5. 이비인후과 알고리즘 및 피로도 계산 (수정완료)
 # ==========================================
 
 # 연령대별 가중치 적용
@@ -151,30 +150,22 @@ else:
 # 청취 방식별 실질 음압(dB) 보정
 effective_db = base_db
 if listening_method == "이어폰 / 헤드폰":
-    effective_db += 3  # 귀 밀착 시 외이도 밀폐 효과로 실질 음압 3dB 상승
+    effective_db += 3  # 귀 밀착 시 외이도 음압 3dB 상승
 
-# 중간 휴식 여부 가중치 (연속 청취 시 피로 누적 가중)
+# 중간 휴식 여부 가중치
 if listening_method == "이어폰 / 헤드폰" and "중간에 쉬면서" in is_continuous:
     rest_factor = 0.7  # 간헐적 청취: 피로도 30% 감쇄
 else:
-    rest_factor = 1.25 # 연속 청취: 쉬지 않고 들을 경우 피로 누적 가중 (1.25배)
+    rest_factor = 1.25 # 연속 청취: 피로 누적 가중치 적용
 
-# 일시적 청력 손실(TTS) 피로도 지수 계산
-if effective_db < 65:
-    # 65dB 미만: 극히 안전한 대역
-    fatigue_index = (effective_db / 65) * (listen_duration / 120) * 15 * age_factor * rest_factor
-elif effective_db < 85:
-    # 65~84dB: 일상 음량대역 (연속 청취 시 60분 내외에서 주의 단계 도달하도록 보정)
-    base_score = ((effective_db - 60) / 25) * 40
-    time_ratio = listen_duration / 60
-    fatigue_index = base_score * time_ratio * age_factor * rest_factor
-else:
-    # 85dB 이상: 고위험 구간 (3dB 상승 시 허용 시간 절반 감소)
-    excess_db = effective_db - 85
-    time_limit = 480 / (2 ** (excess_db / 3))
-    fatigue_index = (listen_duration / time_limit) * 100 * age_factor * rest_factor
+# 피로도 지수 계산 (수정된 통합 비선형 음압 곡선)
+# 70dB 기준 지수 함수형 피로 누적 적용
+db_weight = 10 ** ((effective_db - 70) / 20)
+time_weight = listen_duration / 60.0
 
-fatigue_score = min(int(round(fatigue_index)), 100)
+raw_fatigue = 20 * db_weight * time_weight * age_factor * rest_factor
+fatigue_score = min(max(int(round(raw_fatigue)), 0), 100)
+
 # ==========================================
 # 6. 결과 분석 및 추천 휴식 시간 출력
 # ==========================================
