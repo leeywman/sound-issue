@@ -136,12 +136,12 @@ listen_duration = st.number_input(
 st.write("---")
 
 # ==========================================
-# 5. 이비인후과 알고리즘 및 피로도 계산 (수정완료)
+# 5. 이비인후과 알고리즘 및 피로도 계산 (보정완료)
 # ==========================================
 
 # 연령대별 가중치 적용
 if "10대" in age_group:
-    age_factor = 1.15
+    age_factor = 1.10
 elif "20대" in age_group:
     age_factor = 1.00
 else:
@@ -154,16 +154,23 @@ if listening_method == "이어폰 / 헤드폰":
 
 # 중간 휴식 여부 가중치
 if listening_method == "이어폰 / 헤드폰" and "중간에 쉬면서" in is_continuous:
-    rest_factor = 0.7  # 간헐적 청취: 피로도 30% 감쇄
+    rest_factor = 0.75  # 간헐적 청취 피로도 감쇄
 else:
-    rest_factor = 1.25 # 연속 청취: 피로 누적 가중치 적용
+    rest_factor = 1.15  # 연속 청취 가중
 
-# 피로도 지수 계산 (수정된 통합 비선형 음압 곡선)
-# 70dB 기준 지수 함수형 피로 누적 적용
-db_weight = 10 ** ((effective_db - 70) / 20)
-time_weight = listen_duration / 60.0
+# 음량대역별 피로도 지수 산출 (75% 구간 스파이크 방지 보정식)
+time_ratio = listen_duration / 60.0
 
-raw_fatigue = 20 * db_weight * time_weight * age_factor * rest_factor
+if effective_db < 60:
+    base_fatigue = (effective_db / 60) * 15
+elif effective_db < 75:
+    base_fatigue = 15 + ((effective_db - 60) / 15) * 20
+elif effective_db < 88:
+    base_fatigue = 35 + ((effective_db - 75) / 13) * 35
+else:
+    base_fatigue = 70 + ((effective_db - 88) / 12) * 30
+
+raw_fatigue = base_fatigue * (time_ratio ** 0.8) * age_factor * rest_factor
 fatigue_score = min(max(int(round(raw_fatigue)), 0), 100)
 
 # ==========================================
